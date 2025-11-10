@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -28,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-
+ 
       - name: Create a release
         id: summarize_release
         run: npm run release

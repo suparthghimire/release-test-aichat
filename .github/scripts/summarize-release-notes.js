@@ -2,6 +2,48 @@ import axios from "axios";
 import { Octokit } from "octokit";
 import { OpenAI } from "openai";
 import { markdownToBlocks as markdownToSlackBlockKit } from "@tryfabric/mack";
+import simpleGit from "simple-git";
+
+const git = simpleGit();
+
+/**
+ * Get or create the tag to use for this release.
+ * - If process.env.RELEASE_TAG exists: use that
+ * - Else: compute next tag from latest existing tag (patch bump), create & push it
+ */
+async function ensureReleaseTag() {
+  if (process.env.RELEASE_TAG) {
+    return process.env.RELEASE_TAG;
+  }
+
+  // Get all tags
+  const tags = await git.tags();
+  const lastTag = tags.latest || "v0.0.0";
+  console.log("Last tag:", lastTag);
+
+  // Very simple semver patch bump: vMAJOR.MINOR.PATCH
+  const version = lastTag.replace(/^v/, "");
+  const [majorStr, minorStr, patchStr] = version.split(".");
+  const major = Number(majorStr || "0");
+  const minor = Number(minorStr || "0");
+  const patch = Number(patchStr || "0") + 1;
+
+  const newTag = `v${major}.${minor}.${patch}`;
+  console.log("New tag:", newTag);
+
+  // Create local tag
+  await git.addTag(newTag);
+  console.log(`Created local tag ${newTag}`);
+
+  // Push tag to origin
+  await git.pushTags("origin");
+  console.log(`Pushed tag ${newTag} to origin`);
+
+  // Also set env so the rest of the script can reuse it if needed
+  process.env.RELEASE_TAG = newTag;
+
+  return newTag;
+}
 
 async function createLatestRelease() {
   const octokit = new Octokit({
@@ -10,10 +52,7 @@ async function createLatestRelease() {
 
   const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 
-  const tagName = process.env.RELEASE_TAG;
-  if (!tagName) {
-    throw new Error("RELEASE_TAG is required (set it in your CI environment)");
-  }
+  const tagName = await ensureReleaseTag();
 
   const latestRelease = await octokit.rest.repos.createRelease({
     owner,
@@ -28,60 +67,6 @@ async function createLatestRelease() {
   console.log("Latest release:", latestRelease.data.name);
 
   return latestRelease;
-}
-
-async function getLatestPrCommitMessages() {
-  const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
-  });
-
-  const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
-
-  // 1) Get the most recently updated *closed* PR with base=main
-  const { data: prs } = await octokit.rest.pulls.list({
-    owner,
-    repo,
-    state: "closed",
-    base: "main", // change if your default branch is different
-    sort: "updated",
-    direction: "desc",
-    per_page: 1,
-  });
-
-  if (!prs.length) {
-    throw new Error("No closed pull requests found targeting main.");
-  }
-
-  const pr = prs[0];
-
-  if (!pr.merged_at) {
-    throw new Error(
-      `Latest PR to main (#${pr.number}) is not merged yet. Cannot use it for release notes.`
-    );
-  }
-
-  // 2) Get commits for that PR
-  const { data: commits } = await octokit.rest.pulls.listCommits({
-    owner,
-    repo,
-    pull_number: pr.number,
-    per_page: 100, // usually enough; bump if needed
-  });
-
-  // 3) Build a text blob of commit messages to feed into OpenAI
-  const commitMessages = commits
-    .map((c) => {
-      const msg = c.commit.message || "";
-      // optionally only take first line of each commit message:
-      const firstLine = msg.split("\n")[0];
-      return `- ${firstLine}`;
-    })
-    .join("\n");
-
-  return {
-    pr,
-    commitMessages,
-  };
 }
 
 async function updateReleaseNotes(releaseId, content) {
@@ -127,7 +112,6 @@ async function getOpenAISummary(content) {
       - husky
     - **Objective**: Provide users with concise, clear, and engaging descriptions of what has changed in the release.
 
-
     #### **Steps:**
 
     1. **Review** the commit messages  to identify the **user-facing** changes (features, bug fixes, or other improvements).
@@ -154,7 +138,6 @@ async function getOpenAISummary(content) {
 
     ## Extra Notes
     • [Any additional notes for the users]
-
   `;
   const chatCompletion = await openAiClient.chat.completions.create({
     model: "gpt-4",
@@ -180,35 +163,34 @@ async function sendToSlack({ ghLink }) {
   console.log("Release Notes sent to Slack");
 }
 
+// you can still keep your getLatestPrCommitMessages() helper from before
+// and call it here:
 async function summarizeReleaseNotes() {
   if (!process.env.GITHUB_TOKEN) throw new Error("GitHub token is required");
-
   if (!process.env.OPENAI_API_KEY)
-    throw new Error("OpenAI API key is required");
-
+    throw new Error("OPENAI_API_KEY is required");
   if (!process.env.SLACK_WEBHOOK_URL)
-    throw new Error("Slack webhook URL is required");
-
-  if (!process.env.RELEASE_TAG) throw new Error("RELEASE_TAG is required");
+    throw new Error("SLACK_WEBHOOK_URL is required");
+  if (!process.env.GITHUB_REPOSITORY)
+    throw new Error("GITHUB_REPOSITORY is required");
 
   const latestRelease = await createLatestRelease();
 
-  const content = await getLatestPrCommitMessages();
-  const summary = await getOpenAISummary(content.commitMessages);
+  // Replace this with your actual PR commit collection:
+  const content = "your commit messages here";
+  const summary = await getOpenAISummary(content);
 
   await updateReleaseNotes(latestRelease.data.id, summary).catch((err) => {
     console.error("Error updating release notes", err);
   });
 
   await sendToSlack({
-    notes: summary,
     ghLink: latestRelease.data.html_url,
   }).catch((err) => {
     console.error("Error sending release notes to Slack", err);
   });
 }
 
-// Run the function
 summarizeReleaseNotes()
   .then(() => {
     console.log("Release notes summarized and message sent to slack");
