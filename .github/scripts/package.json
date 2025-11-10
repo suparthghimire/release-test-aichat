@@ -1,0 +1,19 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "summarize-release-notes.js",
+  "scripts": {
+    "release": "node summarize-release-notes.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@tryfabric/mack": "^1.2.1",
+    "axios": "^1.13.2",
+    "octokit": "^5.0.5",
+    "openai": "^6.8.1"
+  }
+}
