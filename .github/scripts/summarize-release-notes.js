@@ -6,11 +6,6 @@ import simpleGit from "simple-git";
 
 const git = simpleGit();
 
-/**
- * Get or create the tag to use for this release.
- * - If process.env.RELEASE_TAG exists: use that
- * - Else: compute next tag from latest existing tag (patch bump), create & push it
- */
 async function ensureReleaseTag() {
   // Get all tags
   const tags = await git.tags();
