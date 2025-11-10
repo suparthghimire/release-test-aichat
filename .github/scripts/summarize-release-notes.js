@@ -30,6 +30,60 @@ async function createLatestRelease() {
   return latestRelease;
 }
 
+async function getLatestPrCommitMessages() {
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+  });
+
+  const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+
+  // 1) Get the most recently updated *closed* PR with base=main
+  const { data: prs } = await octokit.rest.pulls.list({
+    owner,
+    repo,
+    state: "closed",
+    base: "main", // change if your default branch is different
+    sort: "updated",
+    direction: "desc",
+    per_page: 1,
+  });
+
+  if (!prs.length) {
+    throw new Error("No closed pull requests found targeting main.");
+  }
+
+  const pr = prs[0];
+
+  if (!pr.merged_at) {
+    throw new Error(
+      `Latest PR to main (#${pr.number}) is not merged yet. Cannot use it for release notes.`
+    );
+  }
+
+  // 2) Get commits for that PR
+  const { data: commits } = await octokit.rest.pulls.listCommits({
+    owner,
+    repo,
+    pull_number: pr.number,
+    per_page: 100, // usually enough; bump if needed
+  });
+
+  // 3) Build a text blob of commit messages to feed into OpenAI
+  const commitMessages = commits
+    .map((c) => {
+      const msg = c.commit.message || "";
+      // optionally only take first line of each commit message:
+      const firstLine = msg.split("\n")[0];
+      return `- ${firstLine}`;
+    })
+    .join("\n");
+
+  return {
+    pr,
+    commitMessages,
+  };
+}
+
 async function updateReleaseNotes(releaseId, content) {
   const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN,
@@ -139,8 +193,8 @@ async function summarizeReleaseNotes() {
 
   const latestRelease = await createLatestRelease();
 
-  const content = latestRelease.data.body;
-  const summary = await getOpenAISummary(content);
+  const content = await getLatestPrCommitMessages();
+  const summary = await getOpenAISummary(content.commitMessages);
 
   await updateReleaseNotes(latestRelease.data.id, summary).catch((err) => {
     console.error("Error updating release notes", err);
