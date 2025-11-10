@@ -3,16 +3,26 @@ import { Octokit } from "octokit";
 import { OpenAI } from "openai";
 import { markdownToBlocks as markdownToSlackBlockKit } from "@tryfabric/mack";
 
-async function getLatestRelease() {
+async function createLatestRelease() {
   const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN,
   });
 
   const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 
-  const latestRelease = await octokit.rest.repos.getLatestRelease({
+  const tagName = process.env.RELEASE_TAG;
+  if (!tagName) {
+    throw new Error("RELEASE_TAG is required (set it in your CI environment)");
+  }
+
+  const latestRelease = await octokit.rest.repos.createRelease({
     owner,
     repo,
+    tag_name: tagName,
+    name: `Release ${tagName}`,
+    body: "", // placeholder; you'll overwrite this later with the OpenAI summary
+    draft: false,
+    prerelease: false,
   });
 
   console.log("Latest release:", latestRelease.data.name);
@@ -125,7 +135,9 @@ async function summarizeReleaseNotes() {
   if (!process.env.SLACK_WEBHOOK_URL)
     throw new Error("Slack webhook URL is required");
 
-  const latestRelease = await getLatestRelease();
+  if (!process.env.RELEASE_TAG) throw new Error("RELEASE_TAG is required");
+
+  const latestRelease = await createLatestRelease();
 
   const content = latestRelease.data.body;
   const summary = await getOpenAISummary(content);

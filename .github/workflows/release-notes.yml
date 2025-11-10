@@ -34,3 +34,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SLACK_WEBHOOK_URL: ${{secrets.SLACK_WEBHOOK_URL}}
+          RELEASE_TAG: ${{ github.ref_name }}
+
