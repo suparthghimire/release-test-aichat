@@ -12,10 +12,6 @@ const git = simpleGit();
  * - Else: compute next tag from latest existing tag (patch bump), create & push it
  */
 async function ensureReleaseTag() {
-  if (process.env.RELEASE_TAG) {
-    return process.env.RELEASE_TAG;
-  }
-
   // Get all tags
   const tags = await git.tags();
   const lastTag = tags.latest || "v0.0.0";
