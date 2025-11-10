@@ -1,4 +1,4 @@
-import { post } from "axios";
+import axios from "axios";
 import { Octokit } from "octokit";
 import { OpenAI } from "openai";
 import { markdownToBlocks as markdownToSlackBlockKit } from "@tryfabric/mack";
@@ -110,7 +110,7 @@ async function sendToSlack({ ghLink }) {
 
   const blocks = await markdownToSlackBlockKit(messageOnSlack);
 
-  await post(process.env.SLACK_WEBHOOK_URL, {
+  await axios.post(process.env.SLACK_WEBHOOK_URL, {
     blocks: blocks,
   });
   console.log("Release Notes sent to Slack");
